@@ -1,51 +1,52 @@
 const express = require("express");
 const cors = require("cors");
+require("dotenv").config();
+const { Pool } = require("pg");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// TEST ROUTE
+// PostgreSQL connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+// test route
 app.get("/", (req, res) => {
-  res.send("Task Manager Backend is running");
+  res.send("Task Manager Backend Running ✅");
 });
 
-// LOGIN (DEMO)
-app.post("/login", (req, res) => {
+// signup
+app.post("/signup", async (req, res) => {
   const { username, password } = req.body;
-
-  if (username === "admin" && password === "admin") {
-    return res.json({
-      success: true,
-      role: "admin",
-      message: "Admin login successful"
-    });
+  try {
+    await pool.query(
+      "INSERT INTO users(username, password) VALUES($1,$2)",
+      [username, password]
+    );
+    res.json({ message: "User created" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  return res.json({
-    success: true,
-    role: "user",
-    message: "User login successful"
-  });
 });
 
-// ADD TASK (DEMO)
-let tasks = [];
-
-app.post("/tasks", (req, res) => {
-  const task = req.body;
-  task.id = tasks.length + 1;
-  tasks.push(task);
-  res.json({ success: true, task });
+// login
+app.post("/login", async (req, res) => {
+  const { username, password } = req.body;
+  const result = await pool.query(
+    "SELECT * FROM users WHERE username=$1 AND password=$2",
+    [username, password]
+  );
+  if (result.rows.length > 0) {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ success: false });
+  }
 });
 
-// GET TASKS
-app.get("/tasks", (req, res) => {
-  res.json(tasks);
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
-});
-
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () =>
+  console.log("Server running on port", PORT)
+);
