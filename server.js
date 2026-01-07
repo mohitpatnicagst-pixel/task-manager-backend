@@ -7,126 +7,102 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// =====================
-// DATABASE CONNECTION
-// =====================
+// DB
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// =====================
 // INIT TABLES
-// =====================
-async function initDB() {
+(async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
-      username TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL
+      username TEXT UNIQUE,
+      password TEXT
     )
   `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tasks (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      title TEXT NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      user_id INTEGER REFERENCES users(id),
+      title TEXT,
+      completed BOOLEAN DEFAULT false,
+      due_date DATE
     )
   `);
 
-  console.log("✅ Tables ready");
-}
+  console.log("Tables ready");
+})();
 
-initDB();
-
-// =====================
-// HEALTH CHECK
-// =====================
+// TEST
 app.get("/", (req, res) => {
   res.send("Task Manager Backend Running ✅");
 });
 
-// =====================
 // SIGNUP
-// =====================
 app.post("/signup", async (req, res) => {
   const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res.json({ message: "Username & password required" });
-  }
-
   try {
     await pool.query(
-      "INSERT INTO users (username, password) VALUES ($1, $2)",
+      "INSERT INTO users(username,password) VALUES($1,$2)",
       [username, password]
     );
-
     res.json({ message: "User created" });
-  } catch (err) {
+  } catch {
     res.json({ message: "User already exists" });
   }
 });
 
-// =====================
 // LOGIN
-// =====================
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
-
-  const result = await pool.query(
+  const r = await pool.query(
     "SELECT * FROM users WHERE username=$1 AND password=$2",
     [username, password]
   );
 
-  if (result.rows.length === 0) {
-    return res.json({ success: false });
-  }
+  if (r.rows.length === 0) return res.json({ success: false });
 
   res.json({
     success: true,
-    userId: result.rows[0].id
+    userId: r.rows[0].id
   });
 });
 
-// =====================
 // ADD TASK
-// =====================
 app.post("/tasks", async (req, res) => {
-  const { userId, title } = req.body;
-
-  if (!userId || !title) {
-    return res.json({ success: false });
-  }
-
+  const { userId, title, dueDate } = req.body;
   await pool.query(
-    "INSERT INTO tasks (user_id, title) VALUES ($1, $2)",
-    [userId, title]
+    "INSERT INTO tasks(user_id,title,due_date) VALUES($1,$2,$3)",
+    [userId, title, dueDate]
   );
-
   res.json({ success: true });
 });
 
-// =====================
-// GET TASKS (USER-WISE)
-// =====================
-app.get("/tasks/:userId", async (req, res) => {
-  const { userId } = req.params;
-
-  const result = await pool.query(
+// GET TASKS
+app.get("/tasks/:uid", async (req, res) => {
+  const r = await pool.query(
     "SELECT * FROM tasks WHERE user_id=$1 ORDER BY id DESC",
-    [userId]
+    [req.params.uid]
   );
-
-  res.json(result.rows);
+  res.json(r.rows);
 });
 
-// =====================
-// SERVER START
-// =====================
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("🚀 Server running on port", PORT);
+// COMPLETE TASK
+app.put("/tasks/:id/complete", async (req, res) => {
+  await pool.query(
+    "UPDATE tasks SET completed=true WHERE id=$1",
+    [req.params.id]
+  );
+  res.json({ success: true });
 });
+
+// DELETE TASK
+app.delete("/tasks/:id", async (req, res) => {
+  await pool.query("DELETE FROM tasks WHERE id=$1", [req.params.id]);
+  res.json({ success: true });
+});
+
+app.listen(process.env.PORT || 3000);
