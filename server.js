@@ -1,77 +1,57 @@
-require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
+require("dotenv").config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// DB
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// INIT TABLES
-(async () => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      id SERIAL PRIMARY KEY,
-      username TEXT UNIQUE,
-      password TEXT
-    )
-  `);
+/* ================= USERS ================= */
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS tasks (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id),
-      title TEXT,
-      completed BOOLEAN DEFAULT false,
-      due_date DATE
-    )
-  `);
-
-  console.log("Tables ready");
-})();
-
-// TEST
-app.get("/", (req, res) => {
-  res.send("Task Manager Backend Running ✅");
-});
-
-// SIGNUP
+// Signup
 app.post("/signup", async (req, res) => {
   const { username, password } = req.body;
   try {
+    const check = await pool.query(
+      "SELECT * FROM users WHERE username=$1",
+      [username]
+    );
+    if (check.rows.length > 0) {
+      return res.json({ message: "User already exists" });
+    }
+
     await pool.query(
       "INSERT INTO users(username,password) VALUES($1,$2)",
       [username, password]
     );
     res.json({ message: "User created" });
-  } catch {
-    res.json({ message: "User already exists" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-// LOGIN
+// Login
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
-  const r = await pool.query(
+  const result = await pool.query(
     "SELECT * FROM users WHERE username=$1 AND password=$2",
     [username, password]
   );
-
-  if (r.rows.length === 0) return res.json({ success: false });
-
-  res.json({
-    success: true,
-    userId: r.rows[0].id
-  });
+  if (result.rows.length === 0) {
+    return res.json({ success: false });
+  }
+  res.json({ success: true, userId: result.rows[0].id });
 });
 
-// ADD TASK
+/* ================= TASKS ================= */
+
+// Add Task
 app.post("/tasks", async (req, res) => {
   const { userId, title, dueDate } = req.body;
   await pool.query(
@@ -81,28 +61,33 @@ app.post("/tasks", async (req, res) => {
   res.json({ success: true });
 });
 
-// GET TASKS
-app.get("/tasks/:uid", async (req, res) => {
-  const r = await pool.query(
+// Get Tasks
+app.get("/tasks/:userId", async (req, res) => {
+  const result = await pool.query(
     "SELECT * FROM tasks WHERE user_id=$1 ORDER BY id DESC",
-    [req.params.uid]
+    [req.params.userId]
   );
-  res.json(r.rows);
+  res.json(result.rows);
 });
 
-// COMPLETE TASK
-app.put("/tasks/:id/complete", async (req, res) => {
+// Update completed
+app.put("/tasks/:id", async (req, res) => {
   await pool.query(
-    "UPDATE tasks SET completed=true WHERE id=$1",
+    "UPDATE tasks SET completed = NOT completed WHERE id=$1",
     [req.params.id]
   );
   res.json({ success: true });
 });
 
-// DELETE TASK
+// Delete task
 app.delete("/tasks/:id", async (req, res) => {
   await pool.query("DELETE FROM tasks WHERE id=$1", [req.params.id]);
   res.json({ success: true });
 });
 
-app.listen(process.env.PORT || 3000);
+app.get("/", (req, res) => {
+  res.send("Task Manager Backend Running ✅");
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("Server running"));
