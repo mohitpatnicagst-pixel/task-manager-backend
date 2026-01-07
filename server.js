@@ -50,3 +50,20 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () =>
   console.log("Server running on port", PORT)
 );
+// Auto create users table
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE,
+        password TEXT
+      );
+    `);
+    console.log("Users table ready ✅");
+  } catch (err) {
+    console.error("DB error:", err.message);
+  }
+})();
+
+
